@@ -36,12 +36,17 @@ export default function Index() {
   };
 
   const stopRecording = async () => {
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    setRecordingUri(uri);
-    setRecording(null);
-    setIsRecording(false);
-    await transcribeRecording(uri);
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecordingUri(uri);
+      setRecording(null);
+      setIsRecording(false);
+      await transcribeRecording(uri);
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      Alert.alert('Recording Error', 'Unable to stop recording.');
+    }
   };
 
   const playRecording = async () => {
@@ -49,9 +54,14 @@ export default function Index() {
       Alert.alert('No Recording', 'Record some audio first.');
       return;
     }
-    const { sound } = await Audio.Sound.createAsync({ uri: recordingUri });
-    setSound(sound);
-    await sound.playAsync();
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: recordingUri });
+      setSound(sound);
+      await sound.playAsync();
+    } catch (error) {
+      console.error('Error playing recording:', error);
+      Alert.alert('Playback Error', 'Unable to play the recording.');
+    }
   };
 
   const transcribeRecording = async (uri) => {
@@ -82,10 +92,11 @@ export default function Index() {
     }
   };
 
-  // Standard REST API call for Deepgram TTS
+  // Use Deepgram's TTS REST API to convert text to speech.
   const speakDeepgramTTS = async (text) => {
     try {
-      const url = 'https://api.deepgram.com/v1/speak?bit_rate=192000&speak_sample_rate=1';
+      // Updated TTS URL with proper parameters.
+      const url = 'https://api.deepgram.com/v1/speak?bit_rate=32000&speak_sample_rate=1';
       const options = {
         method: 'POST',
         headers: {
@@ -101,31 +112,34 @@ export default function Index() {
         Alert.alert('TTS Error', errorText);
         return;
       }
-      const data = await response.json();
-      // Assuming the JSON response contains a property "audio" with base64-encoded MP3 data
-      if (!data.audio) {
-        Alert.alert("TTS Error", "No audio data received.");
-        return;
-      }
+      // Instead of parsing JSON, get the raw binary data as an ArrayBuffer.
+      const arrayBuffer = await response.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const base64Audio = Buffer.from(uint8Array).toString('base64');
+      
       let uri;
       if (Platform.OS === 'web') {
-        // Use a data URI on web
-        uri = `data:audio/mp3;base64,${data.audio}`;
+        // On web, create a data URI
+        uri = `data:audio/mp3;base64,${base64Audio}`;
+        console.log("Constructed web data URI:", uri.substring(0, 50) + "...");
       } else {
-        // Write the file to cache on native platforms
+        // On native, write the MP3 file to the cache
         uri = FileSystem.cacheDirectory + 'deepgramTTS.mp3';
-        await FileSystem.writeAsStringAsync(uri, data.audio, {
+        await FileSystem.writeAsStringAsync(uri, base64Audio, {
           encoding: FileSystem.EncodingType.Base64,
         });
+        console.log("Wrote TTS audio file to:", uri);
       }
       const { sound } = await Audio.Sound.createAsync({ uri });
       setTtsSound(sound);
+      console.log("Playing TTS audio...");
       await sound.playAsync();
     } catch (error) {
       console.error('Error with TTS:', error);
       Alert.alert('TTS Error', 'Failed to generate or play TTS audio.');
     }
   };
+  
 
   return (
     <View style={styles.container}>
